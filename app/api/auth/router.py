@@ -3,9 +3,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from app.api.deps import get_db
-from app.api.auth.schemas import RegisterRequest, RegisterResponse
+from app.api.auth.schemas import RegisterRequest, RegisterResponse, TokenResponse, LoginRequest
 from app.core.security import get_password_hash
 from app.models.user import User
+from app.core.security import verify_password
+from app.core.jwt import create_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -36,3 +38,17 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         role=user.role,
         is_active=user.is_active,
     )
+
+@router.post("/login", response_model=TokenResponse)
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    stmt = select(User).where(User.email == payload.email)
+    user = db.execute(stmt).scalar_one_or_none()
+
+    if not user or not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+        )
+
+    token = create_access_token(subject=user.email)
+    return TokenResponse(access_token=token)
